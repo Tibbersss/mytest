@@ -33,7 +33,7 @@ RUN set -xe \
 
 ENV PHP_VERSION 7.0.6
 ENV PHP_FILENAME php-7.0.6.tar.xz
-ENV PHP_SHA256 1B237A9455E5476A425DBB9D99966BAD68107747C601958CB9558A7FB49AB419
+ENV PHP_SHA256 1b237a9455e5476a425dbb9d99966bad68107747c601958cb9558a7fb49ab419
 
 # --enable-mysqlnd is included below because it's harder to compile after the fact the extensions are (since it's a plugin for several extensions, not an extension in itself)
 RUN buildDeps=" \
