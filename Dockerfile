@@ -79,6 +79,7 @@ COPY docker-php-ext-* /usr/local/bin/
 COPY apache2-foreground /usr/local/bin/
 COPY . /var/www/html
 WORKDIR /var/www/html/public
+RUN ls
 RUN chmod 755 ./apache2-foreground
 EXPOSE 80
 CMD ["./apache2-foreground"]
