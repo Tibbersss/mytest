@@ -367,11 +367,12 @@ abstract class Connection
      * @param array $bind 参数绑定
      * @param boolean $fetch 不执行只是获取SQL
      * @param boolean $getLastInsID 是否获取自增ID
+     * @param string $sequence 自增序列名
      * @return int
      * @throws DbBindParamException
      * @throws PDOException
      */
-    public function execute($sql, $bind = [], $fetch = false, $getLastInsID = false)
+    public function execute($sql, $bind = [], $fetch = false, $getLastInsID = false, $sequence = null)
     {
         $this->initConnect(true);
         if (!$this->linkID) {
@@ -403,7 +404,7 @@ abstract class Connection
 
             $this->numRows = $this->PDOStatement->rowCount();
             if (preg_match("/^\s*(INSERT\s+INTO|REPLACE\s+INTO)\s+/i", $sql)) {
-                $this->lastInsID = $this->linkID->lastInsertId();
+                $this->lastInsID = $this->linkID->lastInsertId($sequence);
                 if ($getLastInsID) {
                     return $this->lastInsID;
                 }
@@ -595,22 +596,23 @@ abstract class Connection
      * 批处理执行SQL语句
      * 批处理的指令都认为是execute操作
      * @access public
-     * @param array $sql SQL批处理指令
+     * @param array $sqlArray SQL批处理指令
      * @return boolean
      */
-    public function batchQuery($sql = [])
+    public function batchQuery($sqlArray = [])
     {
-        if (!is_array($sql)) {
+        if (!is_array($sqlArray)) {
             return false;
         }
         // 自动启动事务支持
-        $this->startTrans(NOW_TIME);
+        $label = microtime(true);
+        $this->startTrans($label);
         try {
-            foreach ($sql as $_sql) {
-                $result = $this->execute($_sql);
+            foreach ($sqlArray as $sql) {
+                $result = $this->execute($sql);
             }
             // 提交事务
-            $this->commit(NOW_TIME);
+            $this->commit($label);
         } catch (\PDOException $e) {
             $this->rollback();
             return false;
@@ -717,9 +719,10 @@ abstract class Connection
     }
 
     /**
-     * 数据库调试 记录当前SQL
+     * 数据库调试 记录当前SQL及分析性能
      * @access protected
      * @param boolean $start 调试开始标记 true 开始 false 结束
+     * @return void
      */
     protected function debug($start)
     {
@@ -782,7 +785,7 @@ abstract class Connection
     /**
      * 初始化数据库连接
      * @access protected
-     * @param boolean $master 主服务器
+     * @param boolean $master 是否主服务器
      * @return void
      */
     protected function initConnect($master = true)

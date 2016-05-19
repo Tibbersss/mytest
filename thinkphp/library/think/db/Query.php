@@ -44,6 +44,7 @@ class Query
      * 架构函数
      * @access public
      * @param \think\db\Connection|string $connection 数据库对象实例
+     * @param string $model 模型名
      * @throws Exception
      */
     public function __construct($connection = '', $model = '')
@@ -90,6 +91,50 @@ class Query
     }
 
     /**
+     * 指定默认的数据表名（不含前缀）
+     * @access public
+     * @param string $name
+     * @return $this
+     */
+    public function name($name)
+    {
+        $this->name = $name;
+        return $this;
+    }
+
+    /**
+     * 指定默认数据表名（含前缀）
+     * @access public
+     * @param string $table 表名
+     * @return $this
+     */
+    public function setTable($table)
+    {
+        $this->table = $table;
+        return $this;
+    }
+
+    /**
+     * 得到当前的数据表
+     * @access public
+     * @param string $name
+     * @return string
+     */
+    public function getTable($name = '')
+    {
+        if ($name || empty($this->table)) {
+            $name      = $name ?: $this->name;
+            $tableName = $this->connection->getConfig('prefix');
+            if ($name) {
+                $tableName .= Loader::parseName($name);
+            }
+        } else {
+            $tableName = $this->table;
+        }
+        return $tableName;
+    }
+
+    /**
      * 执行查询 返回数据集
      * @access public
      * @param string $sql sql指令
@@ -113,13 +158,14 @@ class Query
      * @param array $bind 参数绑定
      * @param boolean $fetch 不执行只是获取SQL
      * @param boolean $getLastInsID 是否获取自增ID
+     * @param boolean $sequence 自增序列名
      * @return int
      * @throws DbBindParamException
      * @throws PDOException
      */
-    public function execute($sql, $bind = [], $fetch = false, $getLastInsID = false)
+    public function execute($sql, $bind = [], $fetch = false, $getLastInsID = false,$sequence = null)
     {
-        return $this->connection->execute($sql, $bind, $fetch, $getLastInsID);
+        return $this->connection->execute($sql, $bind, $fetch, $getLastInsID,$sequence);
     }
 
     /**
@@ -743,7 +789,7 @@ class Query
 
     /**
      * 分页查询
-     * @param int $listRows 每页数量
+     * @param int|null $listRows 每页数量
      * @param bool $simple 简洁模式
      * @param array $config 配置参数
      *                      page:当前页,
@@ -751,18 +797,18 @@ class Query
      *                      query:url额外参数,
      *                      fragment:url锚点,
      *                      var_page:分页变量,
+     *                      list_rows:每页数量
      *                      type:分页类名,
      *                      namespace:分页类命名空间
      * @return \think\paginator\Collection
      * @throws DbException
      */
-    public function paginate($listRows = 15, $simple = false, $config = [])
+    public function paginate($listRows = null, $simple = false, $config = [])
     {
-        $config = array_merge(Config::get('paginate'), $config);
-
-        $class = (!empty($config['namespace']) ? $config['namespace'] : '\\think\\paginator\\driver\\') . ucwords($config['type']);
-
-        $page = isset($config['page']) ? (int) $config['page'] : call_user_func([
+        $config   = array_merge(Config::get('paginate'), $config);
+        $listRows = $listRows ?: $config['list_rows'];
+        $class    = (!empty($config['namespace']) ? $config['namespace'] : '\\think\\paginator\\driver\\') . ucwords($config['type']);
+        $page     = isset($config['page']) ? (int) $config['page'] : call_user_func([
             $class,
             'getCurrentPage',
         ], $config['var_page']);
@@ -773,28 +819,16 @@ class Query
 
         /** @var Paginator $paginator */
         if (!$simple) {
-            $options   = $this->getOptions();
-            $total     = $this->count();
-            $results   = $this->options($options)->page($page, $listRows)->select();
-            $paginator = new $class($results, $listRows, $page, $simple, $total, $config);
+            $options = $this->getOptions();
+            $total   = $this->count();
+            $results = $this->options($options)->page($page, $listRows)->select();
         } else {
-            $results   = $this->limit(($page - 1) * $listRows, $listRows + 1)->select();
-            $paginator = new $class($results, $listRows, $page, $simple, null, $config);
+            $results = $this->limit(($page - 1) * $listRows, $listRows + 1)->select();
+            $total   = null;
         }
 
+        $paginator = new $class($results, $listRows, $page, $simple, $total, $config);
         return $paginator->items();
-    }
-
-    /**
-     * 指定默认数据表
-     * @access public
-     * @param string $table 表名
-     * @return $this
-     */
-    public function setTable($table)
-    {
-        $this->table = $table;
-        return $this;
     }
 
     /**
@@ -1027,42 +1061,22 @@ class Query
     }
 
     /**
-     * 设置当前name
+     * 设置自增序列名
      * @access public
-     * @param string $name
+     * @param string $sequence 自增序列名
      * @return $this
      */
-    public function name($name)
+    public function sequence($sequence = null)
     {
-        $this->name = $name;
+        $this->options['sequence'] = $sequence;
         return $this;
-    }
-
-    /**
-     * 得到当前的数据表
-     * @access public
-     * @param string $name
-     * @return string
-     */
-    public function getTable($name = '')
-    {
-        if ($name || empty($this->table)) {
-            $name      = $name ?: $this->name;
-            $tableName = $this->connection->getConfig('prefix');
-            if ($name) {
-                $tableName .= Loader::parseName($name);
-            }
-        } else {
-            $tableName = $this->table;
-        }
-        return $tableName;
     }
 
     /**
      * 获取数据表信息
      * @access public
-     * @param string $fetch 获取信息类型 包括 fields type bind pk
      * @param string $tableName 数据表名 留空自动获取
+     * @param string $fetch 获取信息类型 包括 fields type bind pk
      * @return mixed
      */
     public function getTableInfo($tableName = '', $fetch = '')
@@ -1113,7 +1127,7 @@ class Query
      * 获取当前模型对象的主键
      * @access public
      * @param string $table 数据表名
-     * @return mixed
+     * @return string|array
      */
     public function getPk($table = '')
     {
@@ -1138,6 +1152,12 @@ class Query
         return $this;
     }
 
+    /**
+     * 检测参数是否已经绑定
+     * @access public
+     * @param string $key 参数名
+     * @return bool
+     */
     public function isBind($key)
     {
         return isset($this->bind[$key]);
@@ -1155,6 +1175,12 @@ class Query
         return $this;
     }
 
+    /**
+     * 获取当前的查询参数
+     * @access public
+     * @param string $name 参数名
+     * @return mixed
+     */
     public function getOptions($name = '')
     {
         return isset($this->options[$name]) ? $this->options[$name] : $this->options;
@@ -1164,7 +1190,7 @@ class Query
      * 设置关联查询JOIN预查询
      * @access public
      * @param string|array $with 关联方法名称
-     * @return Db
+     * @return $this
      */
     public function with($with)
     {
@@ -1225,7 +1251,7 @@ class Query
      * 设置当前字段添加的表别名
      * @access public
      * @param string $via
-     * @return Db
+     * @return $this
      */
     public function via($via = '')
     {
@@ -1237,7 +1263,7 @@ class Query
      * 设置关联查询
      * @access public
      * @param string $relation 关联名称
-     * @return Db
+     * @return $this
      */
     public function relation($relation)
     {
@@ -1299,7 +1325,7 @@ class Query
         // 生成SQL语句
         $sql = $this->builder()->insert($data, $options, $replace);
         // 执行操作
-        return $this->execute($sql, $this->getBind(), $options['fetch_sql'], $getLastInsID);
+        return $this->execute($sql, $this->getBind(), $options['fetch_sql'], $getLastInsID, isset($options['sequence']) ? $options['sequence'] : null);
     }
 
     /**

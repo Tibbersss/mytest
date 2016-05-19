@@ -59,16 +59,16 @@ class Merge extends Model
      */
     protected static function attachQuery($query)
     {
-        $master = basename(str_replace('\\', '/', get_called_class()));
         $class  = new static();
-        $fields = self::getModelField($master, '', $class->mapFields);
+        $master = $class->name;
+        $fields = self::getModelField($query, $master, '', $class->mapFields);
         $query->alias($master)->field($fields);
 
         foreach (static::$relationModel as $key => $model) {
             $name  = is_int($key) ? $model : $key;
-            $table = is_int($key) ? self::db()->getTable($name) : $model;
+            $table = is_int($key) ? $query->getTable($name) : $model;
             $query->join($table . ' ' . $name, $name . '.' . $class->fk . '=' . $master . '.' . $class->getPk());
-            $fields = self::getModelField($name, $table, $class->mapFields);
+            $fields = self::getModelField($query, $name, $table, $class->mapFields);
             $query->field($fields);
         }
         return $query;
@@ -77,15 +77,16 @@ class Merge extends Model
     /**
      * 获取关联模型的字段 并解决混淆
      * @access protected
+     * @param \think\db\Query $query 查询对象
      * @param string $name 模型名称
      * @param string $table 关联表名称
      * @param array $map 字段映射
      * @return array
      */
-    protected static function getModelField($name, $table = '', $map = [])
+    protected static function getModelField($query, $name, $table = '', $map = [])
     {
         // 获取模型的字段信息
-        $fields = self::db()->getTableInfo($table, 'fields');
+        $fields = $query->getTableInfo($table, 'fields');
         $array  = [];
         foreach ($fields as $field) {
             if ($key = array_search($name . '.' . $field, $map)) {
@@ -163,10 +164,16 @@ class Merge extends Model
         }
         // 数据自动完成
         $this->autoCompleteData($this->auto);
+
+        // 自动写入更新时间
+        if ($this->autoWriteTimestamp) {
+            $this->__set($this->updateTime, null);
+        }
+
         // 处理模型数据
         $data = $this->parseData($this->name, $this->data);
 
-        $db = self::db();
+        $db = $this->db();
         $db->startTrans('merge_save_' . $this->name);
         try {
             if ($this->isUpdate) {
@@ -194,6 +201,11 @@ class Merge extends Model
             } else {
                 // 自动写入
                 $this->autoCompleteData($this->insert);
+
+                // 自动写入创建时间
+                if ($this->autoWriteTimestamp) {
+                    $this->__set($this->createTime, null);
+                }
 
                 if (false === $this->trigger('before_insert', $this)) {
                     return false;
@@ -238,7 +250,8 @@ class Merge extends Model
         if (false === $this->trigger('before_delete', $this)) {
             return false;
         }
-        $db = self::db();
+
+        $db = $this->query;
         $db->startTrans('merge_delete_' . $this->name);
         try {
             $result = $db->delete($this->data);
